@@ -1,11 +1,11 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import json
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from neurofilms_service import NeuroFilmsService, ValidationError
+from neurofilms_service import NeuroFilmsService
 
 service = NeuroFilmsService()
 
@@ -65,7 +65,7 @@ class NeuroFilmsHandler(BaseHTTPRequestHandler):
                 )
                 self._send(HTTPStatus.OK, result)
                 return
-        except ValidationError as error:
+        except ValueError as error:
             self._send(HTTPStatus.BAD_REQUEST, {"error": str(error)})
             return
         except KeyError as error:
