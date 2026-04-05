@@ -80,7 +80,6 @@ class FakeService:
         if not found:
             raise KeyError(f"Submission {submission_id} not found")
 
-        # У нашому поточному app flow немає AI step => pending_ai, тому повертаємо ValueError
         if found["status"] != "pending_human":
             raise ValueError("Human review is allowed only for pending_human submissions")
 
@@ -96,12 +95,17 @@ def _free_port() -> int:
         return int(s.getsockname()[1])
 
 
+class QuietHandler(app.NeuroFilmsHandler):
+    def log_message(self, format, *args):  # noqa: A003
+        return
+
+
 class HttpApiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.host = "127.0.0.1"
         cls.port = _free_port()
-        cls.httpd = app.ThreadingHTTPServer((cls.host, cls.port), app.NeuroFilmsHandler)
+        cls.httpd = app.ThreadingHTTPServer((cls.host, cls.port), QuietHandler)
         cls.thread = threading.Thread(target=cls.httpd.serve_forever, daemon=True)
         cls.thread.start()
         time.sleep(0.05)
@@ -122,6 +126,16 @@ class HttpApiTests(unittest.TestCase):
         if payload is not None:
             body = json.dumps(payload)
             headers["Content-Type"] = "application/json"
+        conn.request(method, path, body=body, headers=headers)
+        resp = conn.getresponse()
+        raw = resp.read().decode("utf-8")
+        conn.close()
+        data = json.loads(raw) if raw else None
+        return resp.status, data
+
+    def _request_raw(self, method: str, path: str, body: str, content_type="application/json"):
+        conn = http.client.HTTPConnection(self.host, self.port, timeout=5)
+        headers = {"Content-Type": content_type}
         conn.request(method, path, body=body, headers=headers)
         resp = conn.getresponse()
         raw = resp.read().decode("utf-8")
@@ -195,6 +209,16 @@ class HttpApiTests(unittest.TestCase):
         status, data = self._request("GET", "/api/v1/catalog")
         self.assertEqual(status, 200)
         self.assertIsInstance(data, list)
+
+    def test_unknown_route_returns_404(self):
+        status, data = self._request("GET", "/api/v1/nope")
+        self.assertEqual(status, 404)
+        self.assertIn("error", data)
+
+    def test_invalid_json_returns_400(self):
+        status, data = self._request_raw("POST", "/api/v1/submissions", "{bad json")
+        self.assertEqual(status, 400)
+        self.assertIn("error", data)
 
 
 if __name__ == "__main__":
